@@ -3,7 +3,8 @@
 ## Introduction
 This is an adaptation of the Pytorch based code for object classification and object estimation methods
 presented in the paper "Learning the signatures of the human grasp using a scalable tactile glove".
-It uses only the classification newtork, not the weight estimation network.
+It uses only the classification newtork, not the weight estimation network and the training/test loss
+evolution over number of epochs is saved.
 
 It relies on Pytorch 0.4.1 (or newer) and the dataset that can be downloaded separately from
 [http://stag.csail.mit.edu/#data](http://stag.csail.mit.edu/#data) .
@@ -31,11 +32,10 @@ data
 |--classification
 |    |--metadata.mat
 ```
+Use a runtime argument
+`--dataset [path to metadata.mat]` to specify its location.
 The images in the dataset are for illustration only and are not used by this code.
 More information about the dataset structure is availble in [http://stag.csail.mit.edu](http://stag.csail.mit.edu).
-
-3. Alternatively, extract the dataset to a different folder and use a runtime argument
-`--dataset [path to metadata.mat]` to specify its location.
 
 ## Object classification
 
@@ -44,24 +44,14 @@ Run the code from the root working directory (the one containing this readme).
 ### Training
 You can train a model from scratch for `N` input frames using:
 ```
-python classification/main.py --reset --nframes N
+python classification/main.py --reset --dataset [path to metadata.mat] --nframes N
 ```
 You can change the location of the saved snapshots using `--snapshotDir YOUR_PATH`.
 
-### Testing
-You can test the provided pretrained model using:
-```
-python classification/main.py --test --nframes N
-```
 
 ## History
-Any necessary changes to the dataset will be documented here.
 
-* **May 2019**: Original code released.
-
-## Terms
-
-
+* **March 2020**: Code uploaded to GitLab.
 
 
 ## Contact

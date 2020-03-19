@@ -1,11 +1,16 @@
 ﻿import sys
-sys.path.insert(0, '/home/msc20f10/Python_Code/pytorch_stag/STAG_slim')
+# sys.path.insert(0, '/home/msc20f10/Python_Code/pytorch_stag/STAG_slim')
 import numpy as np
 import os
 import time
 import shutil
 import random
 import argparse
+
+filePath = os.path.abspath(__file__)
+fileDir = os.path.dirname(filePath)
+parentDir = os.path.dirname(fileDir)
+sys.path.insert(0, parentDir)
 
 localtime = time.localtime(time.time())
 localtime = time.asctime(localtime)
