@@ -1,24 +1,15 @@
-import argparse
-import os
-import shutil
-import time, math, datetime, re
+import datetime
+import re
 from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
-import numpy as np
-from torch.autograd.variable import Variable
 
 from shared.BaseModel import BaseModel
 from shared.resnet_3x3 import resnet18
-from shared import dataset_tools
 
 
 ''' The final model '''
@@ -27,10 +18,11 @@ class SmallNet(nn.Module):
     '''
     This model extract features for each single input frame.
     '''
-
-    def __init__(self, inplanes=64, dropout=0.2):
+    def __init__(self,
+                 inplanes=64, dropout=0.2):
         super(SmallNet, self).__init__()
-        self.features = resnet18(pretrained=False, inplanes=inplanes, dropout=dropout)
+        self.features = resnet18(pretrained=False, inplanes=inplanes,
+                                 dropout=dropout)
         self.features.fc  = nn.Threshold(-1e20, -1e20) # a pass-through layer for snapshot compatibility
 
 
@@ -43,18 +35,17 @@ class TouchNet(nn.Module):
     '''
     This model represents our classification network for 1..N input frames.
     '''
-
     def __init__(self, num_classes=1000, nFrames=5,
                  inplanes=64, dropout=0.2, dropoutFC=0):
         super(TouchNet, self).__init__()
         self.net = SmallNet(inplanes=inplanes, dropout=dropout)
-        self.combination = nn.Conv2d(inplanes*2*nFrames, inplanes*2, kernel_size=1, padding=0)
+        self.combination = nn.Conv2d(inplanes*2*nFrames, inplanes*2,
+                                     kernel_size=1, padding=0)
         self.classifier = nn.Linear(inplanes*2, num_classes)
         self.avgpool = nn.AdaptiveAvgPool2d(1)
-        #______________________________added by Fabian Geiger____________________________________#
         self.dropout = nn.Dropout2d(p=dropoutFC, inplace=False)
         self.dropoutFC = dropoutFC
-        #________________________________________________________________________________________#
+
 
     def forward(self, x):
         xs = []
@@ -70,27 +61,24 @@ class TouchNet(nn.Module):
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
 
-        #______________________________added by Fabian Geiger____________________________________#
         if self.dropoutFC != 0:
             x = self.dropout(x)
-        #________________________________________________________________________________________#
-        
+
         x = self.classifier(x)
         return x
-
 
 
 class ClassificationModel(BaseModel):
     '''
     This class encapsulates the network and handles I/O.
     '''
-
     @property
     def name(self):
         return 'ClassificationModel'
 
 
-    def initialize(self, numClasses, sequenceLength = 1, baseLr = 1e-3, inplanes=64, dropout=0.2, dropoutFC=0):
+    def initialize(self, numClasses, sequenceLength = 1, baseLr = 1e-3,
+                   inplanes=64, dropout=0.2, dropoutFC=0):
         BaseModel.initialize(self)
 
         print('Base LR = %e' % baseLr)
@@ -98,11 +86,12 @@ class ClassificationModel(BaseModel):
         self.numClasses = numClasses
         self.sequenceLength = sequenceLength
 
-        self.model = TouchNet(num_classes = self.numClasses, nFrames=self.sequenceLength,
-                              inplanes=inplanes, dropout=dropout, dropoutFC=dropoutFC)
-        #______________________________added by Fabian Geiger____________________________________#
+        self.model = TouchNet(num_classes = self.numClasses,
+                              nFrames=self.sequenceLength, inplanes=inplanes,
+                              dropout=dropout, dropoutFC=dropoutFC)
+        # Count number of trainable parameters
         self.nParams = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-        #________________________________________________________________________________________#
+
         self.model = torch.nn.DataParallel(self.model)
         self.model.cuda()
         cudnn.benchmark = True
@@ -122,21 +111,20 @@ class ClassificationModel(BaseModel):
         self.dataProcessor = None
 
 
-    def step(self, inputs, isTrain = True, params = {}):
-
+    def step(self,
+             inputs, isTrain = True, params = {}):
         if isTrain:
             self.model.train()
             assert not inputs['objectId'] is None
         else:
             self.model.eval()
 
-        image = torch.autograd.Variable(inputs['image'].cuda(), requires_grad = (isTrain))
-        pressure = torch.autograd.Variable(inputs['pressure'].cuda(), requires_grad = (isTrain))
-        objectId = torch.autograd.Variable(inputs['objectId'].cuda(), requires_grad=False) if 'objectId' in inputs else None
-        # image = torch.autograd.Variable(inputs['image'].cuda(async=True), requires_grad = (isTrain))
-        # pressure = torch.autograd.Variable(inputs['pressure'].cuda(async=True), requires_grad = (isTrain))
-        # objectId = torch.autograd.Variable(inputs['objectId'].cuda(async=True), requires_grad=False) if 'objectId' in inputs else None
-
+        image = torch.autograd.Variable(inputs['image'].cuda(),
+                                        requires_grad = isTrain)
+        pressure = torch.autograd.Variable(inputs['pressure'].cuda(),
+                                           requires_grad = isTrain)
+        objectId = torch.autograd.Variable(inputs['objectId'].cuda(),
+                                           requires_grad=False) if 'objectId' in inputs else None
 
         if isTrain:
             output = self.model(pressure)
@@ -155,7 +143,8 @@ class ClassificationModel(BaseModel):
 
         loss = self.criterion(output, objectId.view(-1))
 
-        (prec1, prec3) = self.accuracy(output, objectId, topk=(1, min(3, self.numClasses)))
+        (prec1, prec3) = self.accuracy(output, objectId,
+                                       topk=(1, min(3, self.numClasses)))
 
         if isTrain:
             # compute gradient and do SGD step
@@ -170,6 +159,7 @@ class ClassificationModel(BaseModel):
                             ])
 
         return res, losses
+
 
     def accuracy(self, output, target, topk=(1,)):
         """Computes the precision@k for the specified values of k"""

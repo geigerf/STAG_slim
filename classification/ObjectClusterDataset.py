@@ -1,11 +1,4 @@
-import os, random, math
-import os.path
-import torch.utils.data as data
-import torchvision.transforms as transforms
-import torch
 import numpy as np
-import re, itertools, sys
-from scipy import misc as scm
 
 import sklearn
 import sklearn.cluster
@@ -15,18 +8,20 @@ from ObjectDataset import ObjectDataset
 
 
 class ObjectClusterDataset(ObjectDataset):
-    ''' Chooses N frames from clusters (made by k-mean clustering) in TSNE projection space. '''
+    ''' Chooses N frames from clusters (made by k-mean clustering)
+    in TSNE projection space. '''
 
     def __init__(self, useClusters = True, **kwargs):
         self.useClusters = useClusters
         self.clusters = None
         super(ObjectClusterDataset, self).__init__(**kwargs)
         self.refresh()
-    
+
+
     def getName(self):
         return 'ObjectClusterDataset'
 
-    
+
     def initClusters(self):
         print('[ObjectClusterDataset] Initializing class clusters...')
 
@@ -63,7 +58,9 @@ class ObjectClusterDataset(ObjectDataset):
                 x_max = np.max(Xemb)
                 Xemb = (Xemb - x_min) / (x_max - x_min)
                 
-                kmeans = sklearn.cluster.KMeans(n_clusters=self.sequenceLength, init='k-means++', n_init=50).fit(Xemb)
+                kmeans = sklearn.cluster.KMeans(n_clusters=self.sequenceLength,
+                                                init='k-means++',
+                                                n_init=50).fit(Xemb)
                 
                 recClusters[objectId] = []
                 for clusterId in range(self.sequenceLength):
@@ -71,7 +68,6 @@ class ObjectClusterDataset(ObjectDataset):
                     cIndices = oIndices[cMask]
                     recClusters[objectId] += [cIndices]
                     self.clusterIds[cIndices] = clusterId
-
 
             self.clusters[recordingId] = recClusters
 
@@ -109,8 +105,3 @@ class ObjectClusterDataset(ObjectDataset):
             np.random.shuffle(others)
             self.indices[i,0] = ind0
             self.indices[i,1:] = others
-
-
-
-   
-        

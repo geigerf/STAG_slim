@@ -1,6 +1,11 @@
-﻿import sys; sys.path.insert(0, '/home/msc20f10/Python_Code/pytorch_stag/touch-master')
+﻿import sys
+sys.path.insert(0, '/home/msc20f10/Python_Code/pytorch_stag/STAG_slim')
 import numpy as np
-import sys, os, re, time, shutil, math, random, datetime, argparse
+import os
+import time
+import shutil
+import random
+import argparse
 
 localtime = time.localtime(time.time())
 localtime = time.asctime(localtime)
@@ -16,19 +21,32 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 parser = argparse.ArgumentParser(description='Touch-Classification.')
-parser.add_argument('--dataset', default='/scratch1/msc20f10/data/classification/metadata.mat', help="Path to metadata.mat file.")
-parser.add_argument('--nframes', type=int, help='Number of input frames [1--8]', default=1)
-parser.add_argument('--reset', type=str2bool, nargs='?', const=True, default=False, help="Start from scratch (do not load weights).")
-parser.add_argument('--test', type=str2bool, nargs='?', const=True, default=False, help="Just run test and quit.")
-parser.add_argument('--large', type=str2bool, nargs='?', const=True, default=False, help="To use the 9x9 filter version.") # This was used only for filter viz
-parser.add_argument('--snapshotDir', default='/scratch1/msc20f10/stag/training_checkpoints', help="Where to store checkpoints during training.")
+parser.add_argument('--dataset', default=('/scratch1/msc20f10/data/'
+                                          + 'classification/metadata.mat'),
+                    help="Path to metadata.mat file.")
+parser.add_argument('--nframes', type=int,
+                    help='Number of input frames [1--8]', default=1)
+parser.add_argument('--reset', type=str2bool, nargs='?', const=True,
+                    default=False, help="Start from scratch (do not load weights).")
+parser.add_argument('--test', type=str2bool, nargs='?', const=True,
+                    default=False, help="Just run test and quit.")
+parser.add_argument('--snapshotDir',
+                    default='/scratch1/msc20f10/stag/training_checkpoints',
+                    help="Where to store checkpoints during training.")
 #______________________________added by Fabian Geiger____________________________________#
-parser.add_argument('--gpu', type=int, help="ID number of the GPU to use [0--4]. If left unspecified all visible CPUs.", default=None)
-parser.add_argument('--experiment', default=default_experiment, help="Name of the current experiment.")
-parser.add_argument('--nfilters', type=int, default=64, help="Number of filters for the first convolution.")
-parser.add_argument('--dropout', type=float, default=0.2, help="Dropout to be applied between the two ResNet blocks.")
-parser.add_argument('--dropoutFC', type=float, default=0, help="Dropout to be applied at the fully connected layer.")
-parser.add_argument('--epochs', type=int, default=30, help="Number of epochs to train.")
+parser.add_argument('--gpu', type=int, default=None,
+                    help=("ID number of the GPU to use [0--4]."
+                          + "If left unspecified all visible CPUs."))
+parser.add_argument('--experiment', default=default_experiment,
+                    help="Name of the current experiment.")
+parser.add_argument('--nfilters', type=int, default=64,
+                    help="Number of filters for the first convolution.")
+parser.add_argument('--dropout', type=float, default=0.2,
+                    help="Dropout between the two ResNet blocks.")
+parser.add_argument('--dropoutFC', type=float, default=0,
+                    help="Dropout before the fully connected layer.")
+parser.add_argument('--epochs', type=int, default=30,
+                    help="Number of epochs to train.")
 args = parser.parse_args()
 
 # This line makes only the chosen GPU visible. Tensorflow will allocate memory on all visible GPUs.
@@ -37,14 +55,10 @@ if args.gpu is not None:
 #________________________________________________________________________________________#
 
 import torch
-import torch.nn as nn
-import torchvision.transforms as transforms
-import torch.utils.data as data
 import torch.backends.cudnn as cudnn
-import torchvision.utils as vutils
 
 from ObjectClusterDataset import ObjectClusterDataset
-from shared import dataset_tools
+
 
 nFrames = args.nframes
 epochs = args.epochs
@@ -56,12 +70,11 @@ metaFile = args.dataset
 doFilter = True
 
 
-
 class Trainer(object):
-
     def __init__(self):
         self.init()
         super(Trainer, self).__init__()
+
 
     def init(self):
         # Init model
@@ -69,19 +82,24 @@ class Trainer(object):
 
         self.initModel()
 
-    def loadDatasets(self, split='train', shuffle=True, useClusterSampling=False):
+
+    def loadDatasets(self,
+                     split='train', shuffle=True, useClusterSampling=False):
         return torch.utils.data.DataLoader(
-            ObjectClusterDataset(split=split, doAugment=(split=='train'), doFilter = doFilter, sequenceLength=nFrames, metaFile=metaFile, useClusters=useClusterSampling),
-            batch_size=batch_size, shuffle=shuffle,
-            num_workers=workers)
+            ObjectClusterDataset(split=split,
+                                 doAugment=(split=='train'),
+                                 doFilter=doFilter,
+                                 sequenceLength=nFrames,
+                                 metaFile=metaFile,
+                                 useClusters=useClusterSampling),
+            batch_size=batch_size, shuffle=shuffle, num_workers=workers)
+
 
     def run(self):
-        #______________________________added by Fabian Geiger____________________________________#
         trainloss_history = []
         trainprec_history = []
         testloss_history = []
         testprec_history = []
-        #________________________________________________________________________________________#
         print('[Trainer] Starting...')
 
         self.counters = {
@@ -100,8 +118,13 @@ class Trainer(object):
             print('Epoch %d/%d....' % (epoch, epochs))
             self.model.updateLearningRate(epoch)
 
-            trainprec1, _, trainloss = self.step(train_loader, self.model.epoch, isTrain = True)
-            prec1, _, testloss = self.step(val_loader, self.model.epoch, isTrain = False, sinkName=None)
+            trainprec1, _, trainloss = self.step(train_loader,
+                                                 self.model.epoch,
+                                                 isTrain = True)
+            prec1, _, testloss = self.step(val_loader,
+                                           self.model.epoch,
+                                           isTrain = False,
+                                           sinkName=None)
 
             # remember best prec@1 and save checkpoint
             is_best = prec1 > self.model.bestPrec
@@ -111,29 +134,31 @@ class Trainer(object):
             if not args.snapshotDir is None:
                 self.saveCheckpoint(self.model.exportState(), is_best)
                 
-            #______________________________added by Fabian Geiger____________________________________#
             trainloss_history.append(trainloss)
             trainprec_history.append(trainprec1)
             testloss_history.append(testloss)
             testprec_history.append(prec1)
-            #________________________________________________________________________________________#
-        
+
         # Final results
         res = self.doSink()
         
-        #______________________________added by Fabian Geiger____________________________________#
-        savedir = '/home/msc20f10/Python_Code/results/stag/np' + str(self.model.nParams) + '_'
-        np.save(savedir + experiment + '_history.npy', np.array([trainloss_history, trainprec_history,
-                                                                 testloss_history, testprec_history, res]))
-        #________________________________________________________________________________________#
-            
+        savedir = ('/home/msc20f10/Python_Code/results/stag/np'
+                   + str(self.model.nParams) + '_')
+        np.save(savedir + experiment + '_history.npy',
+                np.array([trainloss_history, trainprec_history,
+                          testloss_history, testprec_history, res]))
+        
         print('DONE')
+
 
     def doSink(self):
         res = {}
 
         print('Running test...')
-        res['test-top1'], res['test-top3'], _ = self.step(self.val_loader, self.model.epoch, isTrain = False, sinkName = 'test')
+        res['test-top1'], res['test-top3'], _ = self.step(self.val_loader,
+                                                          self.model.epoch,
+                                                          isTrain = False,
+                                                          sinkName = 'test')
 
         print('Running test with clustering...')
         val_loader_cluster = self.loadDatasets('test', False, True)
@@ -145,26 +170,21 @@ class Trainer(object):
             
         return res
 
-            
-
     
     def initModel(self):
         cudnn.benchmark = True
 
-        if args.large:
-            from ClassificationModelLargeViz import ClassificationModelLargeViz as Model # for filter viz only
-            initShapshot = 'large_viz'
-        else:
-            from ClassificationModel import ClassificationModel as Model # the main model
-            initShapshot = 'default'
+        from ClassificationModel import ClassificationModel as Model # the main model
+        initShapshot = 'default'
 
         # initShapshot = os.path.join('snapshots', 'classification', '%s_%dx' % (initShapshot, nFrames), 'checkpoint.pth.tar')
         initShapshot = os.path.join('/scratch1/msc20f10/stag/training_checkpoints', 'checkpoint.pth.tar')
         if args.reset:
             initShapshot = None
 
-        self.model = Model(numClasses=len(self.val_loader.dataset.meta['objects']), sequenceLength=nFrames,
-                           inplanes=args.nfilters, dropout=args.dropout, dropoutFC=args.dropoutFC)
+        self.model = Model(numClasses=len(self.val_loader.dataset.meta['objects']),
+                           sequenceLength=nFrames, inplanes=args.nfilters,
+                           dropout=args.dropout, dropoutFC=args.dropoutFC)
         self.model.epoch = 0
         self.model.bestPrec = -1e20
         if not initShapshot is None:
@@ -174,8 +194,8 @@ class Trainer(object):
             self.model.importState(state)
 
 
-    def step(self, data_loader, epoch, isTrain = True, sinkName = None):
-
+    def step(self,
+             data_loader, epoch, isTrain = True, sinkName = None):
         if isTrain:
             data_loader.dataset.refresh()
 
@@ -202,7 +222,8 @@ class Trainer(object):
                 'objectId': inputs[3],
                 }
 
-            res, loss = self.model.step(inputsDict, isTrain, params = {'debug': True})
+            res, loss = self.model.step(inputsDict, isTrain,
+                                        params = {'debug': True})
 
             losses.update(loss['Loss'], inputs[0].size(0))
             top1.update(loss['Top1'], inputs[0].size(0))
@@ -227,7 +248,6 @@ class Trainer(object):
         
         self.counters['test'] = self.counters['test'] + 1
 
-        #________________________return of loss added by Fabian Geiger___________________________#
         return top1.avg, top3.avg, losses.avg
 
 
@@ -256,7 +276,6 @@ class Trainer(object):
         ex.run()
 
 
-
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -277,6 +296,5 @@ class AverageMeter(object):
         
 if __name__ == "__main__":    
     Trainer.make()
-    
-    
+      
     

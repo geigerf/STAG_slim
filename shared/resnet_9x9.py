@@ -1,7 +1,5 @@
 import torch.nn as nn
-import math
 import torch.utils.model_zoo as model_zoo
-import torch.nn.init as weight_init
 
 __all__ = ['ResNet', 'resnet18']
 
@@ -29,6 +27,7 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
+
 
     def forward(self, x):
         residual = x
@@ -65,6 +64,7 @@ class Bottleneck(nn.Module):
         self.downsample = downsample
         self.stride = stride
 
+
     def forward(self, x):
         residual = x
 
@@ -89,7 +89,6 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-
     def __init__(self, block, layers, num_classes=1000):
         self.inplanes = 64
         super(ResNet, self).__init__()
@@ -115,6 +114,7 @@ class ResNet(nn.Module):
         #        weight_init.constant_(m.weight, 1)
         #        weight_init.constant_(m.bias, 0)
 
+
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -131,6 +131,7 @@ class ResNet(nn.Module):
             layers.append(block(self.inplanes, planes))
 
         return nn.Sequential(*layers)
+
 
     def forward(self, x):
         x = self.conv1(x)
@@ -161,4 +162,3 @@ def resnet18(pretrained=False, **kwargs):
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
     return model
-

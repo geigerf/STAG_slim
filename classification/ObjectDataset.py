@@ -1,18 +1,13 @@
-import os, random, math
-import os.path
-import torch.utils.data as data
-import torchvision.transforms as transforms
 import torch
-import torch.nn.functional as F
 import numpy as np
-import re, itertools
 
 from TouchDataset import TouchDataset, MetadataLoader
 
 
 class ObjectDataset(TouchDataset):
-    def __init__(self, split='train', doAugment = False, doFilter = True, doBalance=True, sequenceLength = 5, objectId = None, notObjectId = None,
-        metaFile = '', inputSize = 32):
+    def __init__(self, split='train', doAugment=False, doFilter=True,
+                 doBalance=True, sequenceLength=5, objectId=None,
+                 notObjectId=None, metaFile='', inputSize=32):
 
         self.metaFile = metaFile
         self.doFilter = doFilter
@@ -20,11 +15,14 @@ class ObjectDataset(TouchDataset):
         self.objectId = objectId
         self.notObjectId = notObjectId
         
-        TouchDataset.initialize(self, split=split, doAugment=doAugment, sequenceLength=sequenceLength, inputSize = inputSize)
+        TouchDataset.initialize(self, split=split, doAugment=doAugment,
+                                sequenceLength=sequenceLength,
+                                inputSize=inputSize)
 
     
     def getName(self):
         return 'ObjectDataset'
+
 
     def loadDataset(self):
         meta = MetadataLoader.getInstance().getMeta(self.metaFile)
@@ -50,12 +48,6 @@ class ObjectDataset(TouchDataset):
 
         return meta, valid0, validN, pressure
 
-    
-
-            
-    
-
-
 
     def __getitem__(self, indexExt):
         row, image, pressure = self.getItemBase(indexExt)
@@ -68,5 +60,3 @@ class ObjectDataset(TouchDataset):
         #import pdb; pdb.set_trace()
         
         return row, image, pressure, objectId
-
-        

@@ -1,6 +1,3 @@
-import os
-import torch
-
 class BaseModel(object):
     
     def __init__(self, *args, **kwargs):
@@ -16,8 +13,7 @@ class BaseModel(object):
 
     def initialize(self):
         pass
-
-            
+     
     def step(self, inputs, isTrain = True, params = {}):
         pass
     

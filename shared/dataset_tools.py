@@ -1,5 +1,6 @@
 import numpy as np
-import sys, os, re, math, shutil, time, datetime
+import os
+import shutil
 import scipy.io as sio
 
 
@@ -38,9 +39,9 @@ class MatReader(object):
     '''
     Loads matlab mat file and formats it for simple use.
     '''
-
     def __init__(self, flatten1D = True):
         self.flatten1D = flatten1D
+
 
     def loadmat(self, filename):
         meta = sio.loadmat(filename, struct_as_record=False) 
@@ -52,6 +53,7 @@ class MatReader(object):
         meta = self._squeezeItem(meta)
         return meta
 
+
     def _squeezeItem(self, item):
         if isinstance(item, np.ndarray):            
             if item.dtype == np.object:
@@ -61,7 +63,8 @@ class MatReader(object):
                     item = item.squeeze()
             elif item.dtype.type is np.str_:
                 item = str(item.squeeze())
-            elif self.flatten1D and len(item.shape) == 2 and (item.shape[0] == 1 or item.shape[1] == 1):
+            elif (self.flatten1D and len(item.shape) == 2
+                  and (item.shape[0] == 1 or item.shape[1] == 1)):
                 #import pdb; pdb.set_trace()
                 item = item.flatten()
             
@@ -69,11 +72,11 @@ class MatReader(object):
                 #import pdb; pdb.set_trace()
                 #for v in np.nditer(item, flags=['refs_ok'], op_flags=['readwrite']):
                 #    v[...] = self._squeezeItem(v)
-                it = np.nditer(item, flags=['multi_index','refs_ok'], op_flags=['readwrite'])
+                it = np.nditer(item, flags=['multi_index','refs_ok'],
+                               op_flags=['readwrite'])
                 while not it.finished:
                     item[it.multi_index] = self._squeezeItem(item[it.multi_index])
                     it.iternext()
-
 
 
         if isinstance(item, dict):
@@ -85,3 +88,4 @@ class MatReader(object):
                 setattr(item, k, self._squeezeItem(v))
                  
         return item
+    
