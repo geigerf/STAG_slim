@@ -18,11 +18,12 @@ class SmallNet(nn.Module):
     '''
     This model extract features for each single input frame.
     '''
-    def __init__(self,
-                 inplanes=64, dropout=0.2):
+    def __init__(self, inplanes=64, dropout=0.2,
+                 stride=1, dilation=1):
         super(SmallNet, self).__init__()
         self.features = resnet18(pretrained=False, inplanes=inplanes,
-                                 dropout=dropout)
+                                 dropout=dropout, stride=stride,
+                                 dilation=dilation)
         self.features.fc  = nn.Threshold(-1e20, -1e20) # a pass-through layer for snapshot compatibility
 
 
@@ -36,9 +37,11 @@ class TouchNet(nn.Module):
     This model represents our classification network for 1..N input frames.
     '''
     def __init__(self, num_classes=1000, nFrames=5,
-                 inplanes=64, dropout=0.2, dropoutFC=0):
+                 inplanes=64, dropout=0.2, dropoutFC=0,
+                 stride=1, dilation=1):
         super(TouchNet, self).__init__()
-        self.net = SmallNet(inplanes=inplanes, dropout=dropout)
+        self.net = SmallNet(inplanes=inplanes, dropout=dropout,
+                            stride=stride, dilation=dilation)
         self.combination = nn.Conv2d(inplanes*2*nFrames, inplanes*2,
                                      kernel_size=1, padding=0)
         self.classifier = nn.Linear(inplanes*2, num_classes)

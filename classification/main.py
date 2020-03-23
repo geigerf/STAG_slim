@@ -38,7 +38,6 @@ parser.add_argument('--test', type=str2bool, nargs='?', const=True,
 parser.add_argument('--snapshotDir',
                     default='/scratch1/msc20f10/stag/training_checkpoints',
                     help="Where to store checkpoints during training.")
-#______________________________added by Fabian Geiger____________________________________#
 parser.add_argument('--gpu', type=int, default=None,
                     help=("ID number of the GPU to use [0--4]."
                           + "If left unspecified all visible CPUs."))
@@ -52,6 +51,10 @@ parser.add_argument('--dropoutFC', type=float, default=0,
                     help="Dropout before the fully connected layer.")
 parser.add_argument('--epochs', type=int, default=30,
                     help="Number of epochs to train.")
+parser.add_argument('--stride', type=int, default=1,
+                    help="Stride to use for the first convolution.")
+parser.add_argument('--dilation', type=int, default=1,
+                    help="Stride to use for the first convolution.")
 args = parser.parse_args()
 
 # This line makes only the chosen GPU visible. Tensorflow will allocate memory on all visible GPUs.
@@ -189,7 +192,8 @@ class Trainer(object):
 
         self.model = Model(numClasses=len(self.val_loader.dataset.meta['objects']),
                            sequenceLength=nFrames, inplanes=args.nfilters,
-                           dropout=args.dropout, dropoutFC=args.dropoutFC)
+                           dropout=args.dropout, dropoutFC=args.dropoutFC,
+                           stride=args.stride, dilation=args.dilation)
         self.model.epoch = 0
         self.model.bestPrec = -1e20
         if not initShapshot is None:
