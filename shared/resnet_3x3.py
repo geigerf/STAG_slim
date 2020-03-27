@@ -1,5 +1,5 @@
 import torch.nn as nn
-import math
+import torch
 import torch.utils.model_zoo as model_zoo
 import torch.nn.init as weight_init
 
@@ -11,21 +11,26 @@ model_urls = {
 }
 
 
-def conv3x3(in_planes, out_planes, stride=1):
+def conv3x3(in_planes, out_planes, stride=1, addConv=False):
     """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3,
-                     stride=stride, padding=1, bias=False)
+    if addConv:
+        return nn.Conv2d(in_planes, out_planes, kernel_size=3,
+                         stride=1, padding=0, bias=False)
+    else:
+        return nn.Conv2d(in_planes, out_planes, kernel_size=3,
+                         stride=stride, padding=1, bias=False)
 
 
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None,
+                 addConv=False):
         super(BasicBlock, self).__init__()
-        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.conv1 = conv3x3(inplanes, planes, stride, addConv=addConv)
         self.bn1 = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
+        self.conv2 = conv3x3(planes, planes, addConv=addConv)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
@@ -93,12 +98,30 @@ class Bottleneck(nn.Module):
 class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, inplanes=64,
-                 dropout=0.2, stride=1, dilation=1):
+                 dropout=0.2, stride=1, dilation=1, kernel=3,
+                 addConv=False, dropoutMax=0):
         self.inplanes = inplanes
+        self.stride = stride
+        self.dilation = dilation
+        self.kernel = kernel
+        self.addConv = addConv
+        self.dropoutMax = dropoutMax
         super(ResNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, inplanes, kernel_size=3, stride=stride,
-                               dilation=dilation, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(inplanes)
+        if stride+dilation > 2 or kernel > 3:
+            self.conv1 = nn.Conv2d(1, 3*inplanes//4, kernel_size=3,
+                                   stride=stride, dilation=1, padding=1,
+                                   bias=False)
+            self.conv2 = nn.Conv2d(1, inplanes//4, kernel_size=kernel,
+                                   stride=stride, dilation=dilation,
+                                   padding=kernel//2 * dilation, bias=False)
+            self.bn1 = nn.BatchNorm2d(3*inplanes//4)
+            self.bn2 = nn.BatchNorm2d(inplanes//4)
+        else:
+            self.conv1 = nn.Conv2d(1, inplanes, kernel_size=3, stride=stride,
+                                   dilation=1, padding=1, bias=False)
+            self.bn1 = nn.BatchNorm2d(inplanes)
+        if dropoutMax != 0:
+            self.dropoutM = nn.Dropout2d(p=dropoutMax, inplace=False)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, inplanes, layers[0])
@@ -128,7 +151,8 @@ class ResNet(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
+        layers.append(block(self.inplanes, planes, stride,
+                            downsample, self.addConv))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes))
@@ -138,10 +162,20 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         #import pdb; pdb.set_trace()
-        x = self.conv1(x)
-        x = self.bn1(x)
+        if self.stride+self.dilation > 2 or self.kernel > 3:
+            x1 = self.conv1(x)
+            x1 = self.bn1(x1)
+            x2 = self.conv2(x)
+            x2 = self.bn2(x2)
+            x = torch.cat([x1, x2], dim=1)
+        else:
+            x = self.conv1(x)
+            x = self.bn1(x)
         x = self.relu(x)
-        x = self.maxpool(x)
+        if self.stride == 1:
+            x = self.maxpool(x)
+        if self.dropoutMax != 0:
+            x = self.dropoutM(x)
 
         x = self.layer1(x)
         x = self.dropout(x)
@@ -156,14 +190,15 @@ class ResNet(nn.Module):
         return x
 
 
-def resnet18(pretrained=False, inplanes=64, dropout=0.2,
-             stride=1, dilation=1, **kwargs):
+def resnet18(pretrained=False, inplanes=64, dropout=0.2, stride=1,
+             dilation=1, addConv=False, dropoutMax=0, **kwargs):
     """Constructs a ResNet-18 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(BasicBlock, [2, 2, 2, 2], inplanes=inplanes, dropout=dropout,
-                   stride=stride, dilation=dilation, **kwargs)
+    model = ResNet(BasicBlock, [2, 2, 2, 2], inplanes=inplanes,
+                   dropout=dropout, stride=stride, dilation=dilation,
+                   addConv=addConv, dropoutMax=dropoutMax, **kwargs)
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
     return model

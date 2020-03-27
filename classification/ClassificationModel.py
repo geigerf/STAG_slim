@@ -18,12 +18,13 @@ class SmallNet(nn.Module):
     '''
     This model extract features for each single input frame.
     '''
-    def __init__(self, inplanes=64, dropout=0.2,
-                 stride=1, dilation=1):
+    def __init__(self, inplanes=64, dropout=0.2, stride=1, dilation=1,
+                 kernel=3, addConv=False, dropoutMax=0):
         super(SmallNet, self).__init__()
         self.features = resnet18(pretrained=False, inplanes=inplanes,
                                  dropout=dropout, stride=stride,
-                                 dilation=dilation)
+                                 dilation=dilation, kernel=kernel,
+                                 addConv=addConv, dropoutMax=dropoutMax)
         self.features.fc  = nn.Threshold(-1e20, -1e20) # a pass-through layer for snapshot compatibility
 
 
@@ -36,18 +37,23 @@ class TouchNet(nn.Module):
     '''
     This model represents our classification network for 1..N input frames.
     '''
-    def __init__(self, num_classes=1000, nFrames=5,
-                 inplanes=64, dropout=0.2, dropoutFC=0,
-                 stride=1, dilation=1):
+    def __init__(self, num_classes=1000, nFrames=5, inplanes=64,
+                 dropout=0.2, dropoutFC=0, stride=1, dilation=1,
+                 kernel=3, addConv=False, dropoutMax=0):
         super(TouchNet, self).__init__()
         self.net = SmallNet(inplanes=inplanes, dropout=dropout,
-                            stride=stride, dilation=dilation)
+                            stride=stride, dilation=dilation, kernel=kernel,
+                            dropoutMax=dropoutMax)
         self.combination = nn.Conv2d(inplanes*2*nFrames, inplanes*2,
-                                     kernel_size=1, padding=0)
+                                      kernel_size=1, padding=0)
         self.classifier = nn.Linear(inplanes*2, num_classes)
         self.avgpool = nn.AdaptiveAvgPool2d(1)
+        #__Adaptations_______________________________________________________#
         self.dropout = nn.Dropout2d(p=dropoutFC, inplace=False)
         self.dropoutFC = dropoutFC
+        self.addConv = addConv
+        self.conv = nn.Conv2d(inplanes*2, inplanes*2, kernel_size=5,
+                              stride=1, padding=0, bias=False)
 
 
     def forward(self, x):
@@ -61,6 +67,10 @@ class TouchNet(nn.Module):
 
         # combine
         x = self.combination(x)
+
+        if self.addConv:
+            x = self.conv(x)
+
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
 
@@ -81,7 +91,8 @@ class ClassificationModel(BaseModel):
 
 
     def initialize(self, numClasses, sequenceLength = 1, baseLr = 1e-3,
-                   inplanes=64, dropout=0.2, dropoutFC=0):
+                   inplanes=64, dropout=0.2, dropoutFC=0, stride=1,
+                   dilation=1, kernel=3, addConv=False, dropoutMax=0):
         BaseModel.initialize(self)
 
         print('Base LR = %e' % baseLr)
@@ -91,9 +102,12 @@ class ClassificationModel(BaseModel):
 
         self.model = TouchNet(num_classes = self.numClasses,
                               nFrames=self.sequenceLength, inplanes=inplanes,
-                              dropout=dropout, dropoutFC=dropoutFC)
+                              dropout=dropout, dropoutFC=dropoutFC,
+                              stride=stride, dilation=dilation, kernel=kernel,
+                              dropoutMax=dropoutMax)
         # Count number of trainable parameters
-        self.nParams = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        self.ntParams = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        self.nParams = sum(p.numel() for p in self.model.parameters())
 
         self.model = torch.nn.DataParallel(self.model)
         self.model.cuda()
