@@ -25,21 +25,23 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-parser = argparse.ArgumentParser(description='Touch-Classification.')
+parser = argparse.ArgumentParser(description='Touch-Classification.',
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--dataset', default=('/scratch1/msc20f10/data/'
                                           + 'classification/metadata.mat'),
                     help="Path to metadata.mat file.")
-parser.add_argument('--nframes', type=int,
-                    help='Number of input frames [1--8]', default=1)
+parser.add_argument('--nframes', type=int, default=1,
+                    help='Number of input frames [1--8]')
 parser.add_argument('--reset', type=str2bool, nargs='?', const=True,
-                    default=False, help="Start from scratch (do not load weights).")
+                    default=False,
+                    help="Start from scratch (do not load weights).")
 parser.add_argument('--test', type=str2bool, nargs='?', const=True,
                     default=False, help="Just run test and quit.")
 parser.add_argument('--snapshotDir',
                     default='/scratch1/msc20f10/stag/training_checkpoints',
                     help="Where to store checkpoints during training.")
 parser.add_argument('--gpu', type=int, default=None,
-                    help=("ID number of the GPU to use [0--4]."
+                    help=("ID number of the GPU to use [0--4]. "
                           + "If left unspecified all visible CPUs."))
 parser.add_argument('--experiment', default=default_experiment,
                     help="Name of the current experiment.")
@@ -61,8 +63,11 @@ parser.add_argument('--dilation', type=int, default=1,
                     help="Dilation to use for the first convolution.")
 parser.add_argument('--kernel', type=int, default=3,
                     help="Kernel size to use for the first convolution.")
-parser.add_argument('--customData', type=str2bool, default=False,
-                    help="Use custom data loader.")
+parser.add_argument('--customData', type=str2bool, nargs='?', const=True,
+                    default=False, help="Use custom data loader.")
+parser.add_argument('--kfoldCV', type=int, default=0,
+                    help=("Number of folds used for cross validation. "
+                          + "Can only be used together with custom data loading"))
 args = parser.parse_args()
 
 # This line makes only the chosen GPU visible.
@@ -86,6 +91,11 @@ experiment = 'nf' + str(nFrames) + '_' + args.experiment
 
 metaFile = args.dataset
 doFilter = True
+if not args.customData:
+    kFold = 0
+else:
+    kFold = args.kfoldCV
+    
 
 
 class Trainer(object):
@@ -97,8 +107,12 @@ class Trainer(object):
     def init(self):
         # Init model
         if args.customData:
-            self.data = load_data(filename=metaFile, augment=False, kfold=3,
-                                  seed=123)
+            # Loads the data either with the original train/test split
+            # if split='original' or with a random stratified train/test split
+            # if split='random'
+            self.data = load_data(filename=metaFile, kfold=5,
+                                  split='random',
+                                  seed=int(333 + time.time() + os.getpid()))
         
         self.val_loader = self.loadDatasets('test', False, False)
 
@@ -108,19 +122,19 @@ class Trainer(object):
     def loadDatasets(self, split='train', shuffle=True,
                      useClusterSampling=False):
         if args.customData:
-            idx = 2*int(split!='train')
+            idx = 2*int(split != 'train')
             set_size = len(self.data[idx+1])
             return torch.utils.data.DataLoader(
-                DataLoader(self.data[idx].reshape((set_size,32,32)),
-                           self.data[idx+1], augment=False,
+                DataLoader(self.data[idx].reshape((set_size, 32, 32)),
+                           self.data[idx+1], augment=(split == 'train'),
                            nframes=nFrames, use_clusters=False,
                            nclasses=nClasses),
-            batch_size=batch_size, shuffle=shuffle, num_workers=workers)
+                batch_size=batch_size, shuffle=shuffle, num_workers=workers)
         else:
             return torch.utils.data.DataLoader(
                 ObjectClusterDataset(split=split,
-                                     doAugment=(split=='train'),
-                                     doFilter=doFilter,
+                                     doAugment=(split == 'train'),
+                                     doFilter=doFilter, doBalance=True,
                                      sequenceLength=nFrames,
                                      metaFile=metaFile,
                                      useClusters=useClusterSampling),
@@ -152,10 +166,10 @@ class Trainer(object):
 
             trainprec1, _, trainloss, cm_train = self.step(train_loader,
                                                            self.model.epoch,
-                                                           isTrain = True)
+                                                           isTrain=True)
             prec1, _, testloss, _ = self.step(val_loader,
                                            self.model.epoch,
-                                           isTrain = False,
+                                           isTrain=False,
                                            sinkName=None)
 
             # remember best prec@1 and save checkpoint
@@ -258,7 +272,7 @@ class Trainer(object):
         conf_matrix = torch.zeros(nClasses, nClasses).cpu()
         for i, (inputs) in enumerate(data_loader):
             data_time.update(time.time() - end)
-
+            
             inputsDict = {
                 'image': inputs[1],
                 'pressure': inputs[2],
@@ -338,7 +352,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
         
-if __name__ == "__main__":    
+if __name__ == "__main__":   
     Trainer.make()
       
     

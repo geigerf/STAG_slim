@@ -17,7 +17,7 @@ import torch.utils.data as data
 import torch
 
 
-def load_data(filename, augment=False, kfold=3, seed=333):
+def load_data(filename, kfold=3, seed=333, split='random'):
     """
     Function to load the pressure data with stratified k fold
 
@@ -51,33 +51,56 @@ def load_data(filename, augment=False, kfold=3, seed=333):
     """
 
     data = sio.loadmat(filename)
-    valid_idx = np.array(data['hasValidLabel'].flatten()) == 1
-    balanced_idx = np.array(data['isBalanced'].flatten()) == 1
+    valid_idx = data['hasValidLabel'].flatten() == 1
+    balanced_idx = data['isBalanced'].flatten() == 1
+    # indices now gives a subset of the data set that contains only valid
+    # pressure frames and the same number of frames for each class
     indices = np.logical_and(valid_idx, balanced_idx)
-    pressure = np.array(data['pressure'])
-    pressure = pressure[indices]
-    object_id = np.array(data['objectId']).flatten()
-    object_id = object_id[indices]
+    pressure = data['pressure']
     # Prepare the data the same way as in the paper
     pressure = np.clip((pressure.astype(np.float32)-500)/(650-500), 0.0, 1.0)
-    # Transform the pressure data into 1D sequences for sklearn utils
-    pressure = np.reshape(pressure, (pressure.shape[0], 32*32))
+    object_id = data['objectId'].flatten()
+    
+    if split == 'original':
+        split_idx = data['splitId'].flatten() == 0
+        train_indices = np.logical_and(indices, split_idx)
+        pressure_train = pressure[train_indices]
+        # Transform the pressure data into 1D sequences for sklearn utils
+        pressure_train = np.reshape(pressure_train, (pressure_train.shape[0],
+                                                     32*32))
+        train_data = pressure_train
+        train_labels = object_id[train_indices]
 
-    train_data, test_data,\
-        train_labels, test_labels = train_test_split(pressure, object_id,
-                                                     test_size=0.3,
-                                                     random_state=seed,
-                                                     stratify=object_id)
-    #print(train_data.shape, train_labels.shape)
-    skf = StratifiedKFold(n_splits=kfold, shuffle=True, random_state=seed)
-    # train_ind, val_ind = skf.split(train_data, train_labels)
-    skf_gen = skf.split(train_data, train_labels)
+        split_idx = data['splitId'].flatten() == 1
+        test_indices = np.logical_and(indices, split_idx)
+        pressure_test = pressure[test_indices]
+        # Transform the pressure data into 1D sequences for sklearn utils
+        pressure_test = np.reshape(pressure_test, (pressure_test.shape[0],
+                                                   32*32))
+        test_data = pressure_test
+        test_labels = object_id[test_indices]
 
-    if augment:
-        noise = np.random.random_sample(train_data.shape)*0.015
-        train_data += noise
+        return train_data, train_labels, test_data, test_labels
 
-    return train_data, train_labels, test_data, test_labels, skf_gen
+    elif split == 'random':
+        pressure = pressure[indices]  
+        object_id = object_id[indices]
+        # Transform the pressure data into 1D sequences for sklearn utils
+        pressure = np.reshape(pressure, (pressure.shape[0], 32*32))
+    
+        train_data, test_data,\
+            train_labels, test_labels = train_test_split(pressure, object_id,
+                                                         test_size=0.306,
+                                                         random_state=seed,
+                                                         shuffle=True,
+                                                         stratify=object_id)
+        #print(train_data.shape, train_labels.shape)
+        skf = StratifiedKFold(n_splits=kfold, shuffle=True,
+                              random_state=seed+1)
+        # train_ind, val_ind = skf.split(train_data, train_labels)
+        skf_gen = skf.split(train_data, train_labels)
+    
+        return train_data, train_labels, test_data, test_labels, skf_gen
 
 
 class DataLoader(data.Dataset):
@@ -91,6 +114,7 @@ class DataLoader(data.Dataset):
         self.collate_data()
         self.dummyrow = torch.zeros((32,1))
         self.dummyimage = torch.zeros((3, 1, 1))
+        self.augment = augment
 
 
     def __len__(self):
@@ -98,9 +122,12 @@ class DataLoader(data.Dataset):
 
 
     def __getitem__(self, idx):
-        data = torch.from_numpy(self.collated_data[idx])
-        labels = torch.LongTensor([int(self.collated_labels[idx])])
-        return self.dummyrow, self.dummyimage, data, labels
+        pressure = torch.from_numpy(self.collated_data[idx])
+        if self.augment:
+            noise = torch.randn_like(pressure) * 0.015
+            pressure += noise
+        object_id = torch.LongTensor([int(self.collated_labels[idx])])
+        return self.dummyrow, self.dummyimage, pressure, object_id
 
 
     def collate_data(self):
@@ -119,14 +146,16 @@ class DataLoader(data.Dataset):
         if not self.use_clusters:
             if self.nframes == 1:
                 self.collated_data = np.expand_dims(self.data, axis=1)
-                self.collated_labels = torch.from_numpy(self.labels)
+                self.collated_labels = self.labels
+                # shuffling is taken care of by the torch.utils.data.DataLoader
                 self.collated_data,\
                 self.collated_labels = shuffle(self.collated_data,
-                                               self.collated_labels)
+                                                self.collated_labels)
                 return
                 
             
             for i in range(self.nclasses):
+                # Get all pressure frames from the same class
                 indices = np.argwhere(self.labels == i)
                 data_i = list(np.squeeze(self.data[indices]))
 
