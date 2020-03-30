@@ -56,37 +56,55 @@ def load_data(filename, kfold=3, seed=333, split='random'):
     # indices now gives a subset of the data set that contains only valid
     # pressure frames and the same number of frames for each class
     indices = np.logical_and(valid_idx, balanced_idx)
-    pressure = data['pressure']
+    pressure = np.transpose(data['pressure'], axes=(0, 2, 1))
     # Prepare the data the same way as in the paper
     pressure = np.clip((pressure.astype(np.float32)-500)/(650-500), 0.0, 1.0)
+    # Reshape the data to use sklearn utility functions
+    pressure = np.reshape(pressure, (-1, 32*32))
     object_id = data['objectId'].flatten()
     
     if split == 'original':
         split_idx = data['splitId'].flatten() == 0
         train_indices = np.logical_and(indices, split_idx)
         pressure_train = pressure[train_indices]
-        # Transform the pressure data into 1D sequences for sklearn utils
-        pressure_train = np.reshape(pressure_train, (pressure_train.shape[0],
-                                                     32*32))
+        
         train_data = pressure_train
         train_labels = object_id[train_indices]
 
         split_idx = data['splitId'].flatten() == 1
         test_indices = np.logical_and(indices, split_idx)
         pressure_test = pressure[test_indices]
-        # Transform the pressure data into 1D sequences for sklearn utils
-        pressure_test = np.reshape(pressure_test, (pressure_test.shape[0],
-                                                   32*32))
+        
         test_data = pressure_test
         test_labels = object_id[test_indices]
+        
+        # # Add the rest of the valid data to the test set
+        # unbalanced_idx = np.logical_xor(valid_idx, balanced_idx)
+        # rest_pressure = pressure[unbalanced_idx]
+        # rest_object_id = object_id[unbalanced_idx]
+        # test_data = np.append(test_data, rest_pressure, axis=0)
+        # test_labels = np.append(test_labels, rest_object_id, axis=0)
+        
+        #Just to test if the accuracy in the test set itself stays high
+        # train_data, test_data,\
+        #     train_labels, test_labels = train_test_split(pressure_train,
+        #                                                  train_labels,
+        #                                                  test_size=0.2,
+        #                                                  random_state=seed,
+        #                                                  shuffle=True,
+        #                                                  stratify=train_labels)
+        #_____________________________________________________________________#
 
         return train_data, train_labels, test_data, test_labels
 
     elif split == 'random':
-        pressure = pressure[indices]  
+        # # Add the rest of the valid data to the test set
+        # unbalanced_idx = np.logical_xor(valid_idx, balanced_idx)
+        # rest_pressure = pressure[unbalanced_idx]
+        # rest_object_id = object_id[unbalanced_idx]
+
+        pressure = pressure[indices]
         object_id = object_id[indices]
-        # Transform the pressure data into 1D sequences for sklearn utils
-        pressure = np.reshape(pressure, (pressure.shape[0], 32*32))
     
         train_data, test_data,\
             train_labels, test_labels = train_test_split(pressure, object_id,
@@ -99,6 +117,10 @@ def load_data(filename, kfold=3, seed=333, split='random'):
                               random_state=seed+1)
         # train_ind, val_ind = skf.split(train_data, train_labels)
         skf_gen = skf.split(train_data, train_labels)
+        
+        # # Add the rest of the valid data to the test set
+        # test_data = np.append(test_data, rest_pressure, axis=0)
+        # test_labels = np.append(test_labels, rest_object_id, axis=0)
     
         return train_data, train_labels, test_data, test_labels, skf_gen
 
@@ -176,6 +198,16 @@ class DataLoader(data.Dataset):
 
 
     def cluster_data(self):
+        """
+        Function to group the data into clusters in order to maximize the
+        information content of an input to the network.
+        Not yet implemented because it doesn't seem to be necessary
+
+        Returns
+        -------
+        None.
+
+        """
         print('test')
         return
  

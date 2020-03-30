@@ -95,7 +95,7 @@ if not args.customData:
     kFold = 0
 else:
     kFold = args.kfoldCV
-    
+ 
 
 
 class Trainer(object):
@@ -111,9 +111,9 @@ class Trainer(object):
             # if split='original' or with a random stratified train/test split
             # if split='random'
             self.data = load_data(filename=metaFile, kfold=5,
-                                  split='random',
+                                  split='original',
                                   seed=int(333 + time.time() + os.getpid()))
-        
+
         self.val_loader = self.loadDatasets('test', False, False)
 
         self.initModel()
@@ -179,7 +179,7 @@ class Trainer(object):
             self.model.epoch = epoch + 1
             if not args.snapshotDir is None:
                 self.saveCheckpoint(self.model.exportState(), is_best)
-                
+      
             trainloss_history.append(trainloss)
             trainprec_history.append(trainprec1)
             testloss_history.append(testloss)
@@ -187,7 +187,7 @@ class Trainer(object):
 
         # Final results
         res, cm_test, cm_test_cl = self.doSink()
-        
+
         savedir = '/home/msc20f10/Python_Code/results/stag/'
         if args.experiment == 'slim16':
             savedir = savedir + 'slim16/'
@@ -198,7 +198,7 @@ class Trainer(object):
                           testloss_history, testprec_history, res,
                           cm_train.numpy(), cm_test.numpy(), cm_test_cl.numpy(),
                           self.model.ntParams, self.model.nParams]))
-        
+
         print('DONE')
 
 
@@ -221,10 +221,10 @@ class Trainer(object):
         print('--------------\nResults:')
         for k,v in res.items():
             print('\t%s: %.3f %%' % (k,v))
-            
+    
         return res, conf_mat, conf_mat_cluster
 
-    
+
     def initModel(self):
         cudnn.benchmark = True
 
@@ -243,7 +243,7 @@ class Trainer(object):
                            dropoutMax=args.dropoutMax)
         self.model.epoch = 0
         self.model.bestPrec = -1e20
-        
+
         if not initShapshot is None:
             state = torch.load(initShapshot)
             assert not state is None, 'Warning: Could not read checkpoint %s!' % initShapshot
@@ -267,12 +267,12 @@ class Trainer(object):
             'frame': [],
         }
         catRes = lambda res,key: res[key].cpu().numpy() if not key in results else np.concatenate((results[key], res[key].cpu().numpy()), axis=0)
-    
+ 
         end = time.time()
         conf_matrix = torch.zeros(nClasses, nClasses).cpu()
         for i, (inputs) in enumerate(data_loader):
             data_time.update(time.time() - end)
-            
+          
             inputsDict = {
                 'image': inputs[1],
                 'pressure': inputs[2],
@@ -301,10 +301,10 @@ class Trainer(object):
                   .format(epoch, i, len(data_loader), batch_time=batch_time,
                           data_time=data_time, loss=losses, top1=top1, top3=top3,
                           phase=('Train' if isTrain else 'Test')))
-            
+          
             for t, p in zip(inputs[3].view(-1), res['pred'].view(-1)):
                 conf_matrix[t.long(), p.long()] += 1
-        
+      
         self.counters['test'] = self.counters['test'] + 1
 
         return top1.avg, top3.avg, losses.avg, conf_matrix
@@ -325,7 +325,7 @@ class Trainer(object):
 
     @staticmethod
     def make():
-       
+     
         random.seed(454878 + time.time() + os.getpid())
         np.random.seed(int(12683 + time.time() + os.getpid()))
         torch.manual_seed(23142 + time.time() + os.getpid())
@@ -351,8 +351,6 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-        
+      
 if __name__ == "__main__":   
     Trainer.make()
-      
-    
