@@ -47,7 +47,7 @@ parser.add_argument('--experiment', default=default_experiment,
                     help="Name of the current experiment.")
 parser.add_argument('--nfilters', type=int, default=16,
                     help="Number of filters for the first convolution.")
-parser.add_argument('--dropout', type=float, default=0.4,
+parser.add_argument('--dropout', type=float, default=0,
                     help="Dropout between the two ResNet blocks.")
 parser.add_argument('--dropoutFC', type=float, default=0,
                     help="Dropout before the fully connected layer.")
@@ -55,7 +55,7 @@ parser.add_argument('--dropoutMax', type=float, default=0,
                     help="Dropout before the first max pooling layer.")
 parser.add_argument('--addConv', type=str2bool, default=False,
                     help="Convolution after the concatenation.")
-parser.add_argument('--epochs', type=int, default=60,
+parser.add_argument('--epochs', type=int, default=30,
                     help="Number of epochs to train.")
 parser.add_argument('--stride', type=int, default=1,
                     help="Stride to use for the first convolution.")
@@ -65,8 +65,9 @@ parser.add_argument('--kernel', type=int, default=3,
                     help="Kernel size to use for the first convolution.")
 parser.add_argument('--customData', type=str2bool, nargs='?', const=True,
                     default=False, help="Use custom data loader.")
-parser.add_argument('--kfoldCV', type=int, default=0,
-                    help=("Number of folds used for cross validation. "
+parser.add_argument('--kfoldCV', type=str2bool, nargs='?', const=True,
+                    default=False,
+                    help=("performs 6 fold cross validation. "
                           + "Can only be used together with custom data loading"))
 args = parser.parse_args()
 
@@ -92,27 +93,26 @@ experiment = 'nf' + str(nFrames) + '_' + args.experiment
 metaFile = args.dataset
 doFilter = True
 if not args.customData:
-    kFold = 0
+    kFoldCV = False
 else:
-    kFold = args.kfoldCV
+    kFoldCV = args.kfoldCV
+    
+customSplit = 'random'
  
 
-
 class Trainer(object):
-    def __init__(self):
-        self.init()
+    def __init__(self, data_set):
+        self.init(data_set)
         super(Trainer, self).__init__()
 
 
-    def init(self):
+    def init(self, data_set):
         # Init model
         if args.customData:
-            # Loads the data either with the original train/test split
-            # if split='original' or with a random stratified train/test split
-            # if split='random'
-            self.data = load_data(filename=metaFile, kfold=5,
-                                  split='original',
-                                  seed=int(333 + time.time() + os.getpid()))
+            self.data = {}
+            # This data was loaded with the custom_dataloader
+            self.data['train'] = data_set[0:2]
+            self.data['test'] = data_set[2:4]
 
         self.val_loader = self.loadDatasets('test', False, False)
 
@@ -122,11 +122,12 @@ class Trainer(object):
     def loadDatasets(self, split='train', shuffle=True,
                      useClusterSampling=False):
         if args.customData:
-            idx = 2*int(split != 'train')
-            set_size = len(self.data[idx+1])
+            # With custom data, the previously loaded data is used to
+            # instantiate a dataloader
+            set_size = len(self.data[split][1])
             return torch.utils.data.DataLoader(
-                DataLoader(self.data[idx].reshape((set_size, 32, 32)),
-                           self.data[idx+1], augment=(split == 'train'),
+                DataLoader(self.data[split][0].reshape((set_size, 32, 32)),
+                           self.data[split][1], augment=(split == 'train'),
                            nframes=nFrames, use_clusters=False,
                            nclasses=nClasses),
                 batch_size=batch_size, shuffle=shuffle, num_workers=workers)
@@ -142,6 +143,16 @@ class Trainer(object):
 
 
     def run(self):
+        """
+        Implements one complete training for a given number of epochs.
+
+        Returns
+        -------
+        None.
+
+        """
+        # These lists are used to save all precision and loss values through
+        # the training
         trainloss_history = []
         trainprec_history = []
         testloss_history = []
@@ -154,9 +165,11 @@ class Trainer(object):
         }
 
         if args.test:
+            # Just loads the best model and tests it on the given test data
             self.doSink()
             return
 
+        # The validation loader contains the test data
         val_loader = self.val_loader
         train_loader = self.loadDatasets('train', True, False)
 
@@ -200,9 +213,26 @@ class Trainer(object):
                           self.model.ntParams, self.model.nParams]))
 
         print('DONE')
+        return res
 
 
     def doSink(self):
+        """
+        Does the final test on the given test data. If the flag for test was
+        set in the command-line argument, this function is run after loading
+        a previously trained model.
+
+        Returns
+        -------
+        res : dictionary
+            python dictionary containing the results for top1 and top3
+            precision for random and clustering.
+        conf_mat : numpy array
+            confusion matrix for the random collation of frames.
+        conf_mat_cluster : numpy array
+            confusion matrix for the random collation of frames.
+
+        """
         res = {}
 
         print('Running test...')
@@ -210,8 +240,9 @@ class Trainer(object):
             _, conf_mat = self.step(self.val_loader, self.model.epoch,
                                     isTrain=False, sinkName='test')
 
+        # So far clustering is only used if the custom data loading is NOT used
         print('Running test with clustering...')
-        val_loader_cluster = self.loadDatasets('test', False, True)
+        val_loader_cluster = self.loadDatasets('test', False, not args.customData)
         res['test_cluster-top1'], res['test_cluster-top3'],\
             _, conf_mat_cluster = self.step(val_loader_cluster,
                                             self.model.epoch,
@@ -235,6 +266,7 @@ class Trainer(object):
         if args.reset:
             initShapshot = None
 
+        # Initialize the model with all the command-line arguments
         self.model = Model(numClasses=nClasses,
                            sequenceLength=nFrames, inplanes=args.nfilters,
                            dropout=args.dropout, dropoutFC=args.dropoutFC,
@@ -252,7 +284,34 @@ class Trainer(object):
 
 
     def step(self, data_loader, epoch, isTrain=True, sinkName=None):
+        """
+        Implements one step through all batches.
+
+        Parameters
+        ----------
+        data_loader : torch.utils.data.DataLoader
+            Either training or test data loader.
+        epoch : int
+            Current training epoch.
+        isTrain : bool, optional
+            Whether this step is used for training or test. The default is True.
+        sinkName : string, optional
+            Name of the results. The default is None.
+
+        Returns
+        -------
+        top1.avg : AverageMeter
+            Average value of top1 precision after current step.
+        top3.avg : AverageMeter
+            Average value of top3 precision after current step.
+        losses.avg : AverageMeter
+            Average value of loss after current step.
+        conf_matrix : numpy array
+            Confusion matrix after current step.
+
+        """
         if isTrain:
+            # If more than one frame, this generates new combinations of frames
             data_loader.dataset.refresh()
 
         batch_time = AverageMeter()
@@ -292,6 +351,9 @@ class Trainer(object):
             if isTrain:
                 self.counters['train'] = self.counters['train'] + 1
 
+            # Clear line before printing
+            sys.stdout.write('\033[K')
+            sys.stdout.flush()
             print('{phase}: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
@@ -300,11 +362,14 @@ class Trainer(object):
                   'Prec@3 {top3.val:.3f} ({top3.avg:.3f})'
                   .format(epoch, i, len(data_loader), batch_time=batch_time,
                           data_time=data_time, loss=losses, top1=top1, top3=top3,
-                          phase=('Train' if isTrain else 'Test')))
-          
+                          phase=('Train' if isTrain else 'Test')),
+                  end='\r', flush=True)
+
+            # Calculate the confusion matrix
             for t, p in zip(inputs[3].view(-1), res['pred'].view(-1)):
                 conf_matrix[t.long(), p.long()] += 1
       
+        print('')
         self.counters['test'] = self.counters['test'] + 1
 
         return top1.avg, top3.avg, losses.avg, conf_matrix
@@ -320,18 +385,19 @@ class Trainer(object):
         if is_best:
             bestFile = os.path.join(snapshotDir, 'model_best.pth.tar')
             shutil.copyfile(chckFile, bestFile)
-        print('\t...Done.')
+        print('\t...Done.\n')
 
 
     @staticmethod
-    def make():
+    def make(data_set):
      
         random.seed(454878 + time.time() + os.getpid())
         np.random.seed(int(12683 + time.time() + os.getpid()))
         torch.manual_seed(23142 + time.time() + os.getpid())
 
-        ex = Trainer()
-        ex.run()
+        ex = Trainer(data_set)
+        res = ex.run()
+        return res
 
 
 class AverageMeter(object):
@@ -351,6 +417,32 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-      
-if __name__ == "__main__":   
-    Trainer.make()
+
+if __name__ == "__main__": 
+    # Load the data either with the original train/test split if split='original'
+    # or with a random stratified train/test split if split='random'
+    data_set = load_data(filename=metaFile, kfold=6, split=customSplit,
+                         seed=int(333 + time.time() + os.getpid()))
+    
+    # k fold cross validation
+    if kFoldCV:
+        train_data = data_set[0]
+        train_labels = data_set[1]
+        test_data = data_set[2]
+        test_labels = data_set[3]
+        skf_gen = data_set[4]
+        
+        res_top1 = []
+        res_top3 = []
+        for train_index, val_index in skf_gen:
+            dataset = [train_data[train_index], train_labels[train_index],
+                       train_data[val_index], train_labels[val_index]]
+            res = Trainer.make(dataset)
+            res_top1.append(res['test-top1'])
+            res_top3.append(res['test-top3'])
+        
+        print('-------------------------\nResults for 6 fold crossvalidation:')
+        print('\t{:s}: {:.3f} %'.format('Top1', np.mean(res_top1)))
+        print('\t{:s}: {:.3f} %\n'.format('Top3', np.mean(res_top3)))
+    else:
+        Trainer.make(data_set)

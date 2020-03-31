@@ -13,6 +13,8 @@ model_urls = {
 
 def conv3x3(in_planes, out_planes, stride=1, addConv=False):
     """3x3 convolution with padding"""
+    # If an additional convolution should be used, remove the padding in the
+    # ResNet blocks
     if addConv:
         return nn.Conv2d(in_planes, out_planes, kernel_size=3,
                          stride=1, padding=0, bias=False)
@@ -107,6 +109,8 @@ class ResNet(nn.Module):
         self.addConv = addConv
         self.dropoutMax = dropoutMax
         super(ResNet, self).__init__()
+        # Stride, dilation and kernel size are applied to 1/4 of the input
+        # convolution filters
         if stride+dilation > 2 or kernel > 3:
             self.conv1 = nn.Conv2d(1, 3*inplanes//4, kernel_size=3,
                                    stride=stride, dilation=1, padding=1,
@@ -120,6 +124,7 @@ class ResNet(nn.Module):
             self.conv1 = nn.Conv2d(1, inplanes, kernel_size=3, stride=stride,
                                    dilation=1, padding=1, bias=False)
             self.bn1 = nn.BatchNorm2d(inplanes)
+        # Dropout before the maxpooling layer
         if dropoutMax != 0:
             self.dropoutM = nn.Dropout2d(p=dropoutMax, inplace=False)
         self.relu = nn.ReLU(inplace=True)
@@ -162,6 +167,8 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         #import pdb; pdb.set_trace()
+        # Apply stride, dilation or kernel size to 1/4 of the input convolution
+        # filters and concatenate the results afterwards
         if self.stride+self.dilation > 2 or self.kernel > 3:
             x1 = self.conv1(x)
             x1 = self.bn1(x1)
@@ -172,10 +179,12 @@ class ResNet(nn.Module):
             x = self.conv1(x)
             x = self.bn1(x)
         x = self.relu(x)
-        if self.stride == 1:
-            x = self.maxpool(x)
+        # Optional dropout before maxpooling
         if self.dropoutMax != 0:
             x = self.dropoutM(x)
+        # If a stride larger than 1 was used before, maxpooling is not required
+        if self.stride == 1:
+            x = self.maxpool(x)
 
         x = self.layer1(x)
         x = self.dropout(x)

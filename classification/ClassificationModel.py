@@ -68,12 +68,14 @@ class TouchNet(nn.Module):
         # combine
         x = self.combination(x)
 
+        # Try if additional convolution increases test accuracy
         if self.addConv:
             x = self.conv(x)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
 
+        # Try if dropout before fully connected layer increases test accuracy
         if self.dropoutFC != 0:
             x = self.dropout(x)
 

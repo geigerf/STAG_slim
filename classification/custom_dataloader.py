@@ -85,7 +85,8 @@ def load_data(filename, kfold=3, seed=333, split='random'):
         # test_data = np.append(test_data, rest_pressure, axis=0)
         # test_labels = np.append(test_labels, rest_object_id, axis=0)
         
-        #Just to test if the accuracy in the test set itself stays high
+        #_____________________________________________________________________#
+        # # Just to test if the accuracy in the test set itself stays high
         # train_data, test_data,\
         #     train_labels, test_labels = train_test_split(pressure_train,
         #                                                  train_labels,
@@ -105,14 +106,18 @@ def load_data(filename, kfold=3, seed=333, split='random'):
 
         pressure = pressure[indices]
         object_id = object_id[indices]
-    
+
+        # Split the already balanced dataset in a stratified way -> training
+        # and test set will still be balanced
         train_data, test_data,\
             train_labels, test_labels = train_test_split(pressure, object_id,
-                                                         test_size=0.306,
+                                                         test_size=0.1,#0.306,
                                                          random_state=seed,
                                                          shuffle=True,
                                                          stratify=object_id)
         #print(train_data.shape, train_labels.shape)
+        # This generates a k fold split in a stratified way.
+        # Easy way to do k fold cross validation
         skf = StratifiedKFold(n_splits=kfold, shuffle=True,
                               random_state=seed+1)
         # train_ind, val_ind = skf.split(train_data, train_labels)
@@ -154,8 +159,9 @@ class DataLoader(data.Dataset):
 
     def collate_data(self):
         """
-        Function to collate the training or test data into blocks that have a
-        size corresponding to the number of used input frames
+        Function to collate the training or test data into blocks that are
+        sized corresponding to the number of used input frames
+        e.g. if 4 input frames are used, one block has the shape (4,32,32)
 
         Returns
         -------
