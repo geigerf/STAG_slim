@@ -69,6 +69,8 @@ class TouchDataset(data.Dataset):
         indices0 = np.argwhere(self.valid0).flatten()
         self.indices = np.zeros((len(indices0), self.sequenceLength), int)
         for i in range(len(indices0)):
+            # Complement each sample with nframes-1 randomly selected other
+            # samples from ALL valid samples in the data set
             ind0 = indices0[i]
             mask = self.validN.copy()
             if 'recordingId' in self.meta:

@@ -120,6 +120,8 @@ class ResNet(nn.Module):
                                    padding=kernel//2 * dilation, bias=False)
             self.bn1 = nn.BatchNorm2d(3*inplanes//4)
             self.bn2 = nn.BatchNorm2d(inplanes//4)
+        # Stride is also applied to all convolutions, and the maxpooling is
+        # removed if there is a stride greater than 1
         else:
             self.conv1 = nn.Conv2d(1, inplanes, kernel_size=3, stride=stride,
                                    dilation=1, padding=1, bias=False)
@@ -131,7 +133,7 @@ class ResNet(nn.Module):
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, inplanes, layers[0])
         self.layer2 = self._make_layer(block, inplanes*2, layers[1], stride=2)
-        #self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        #self.layer3 = self._make_layer(block, inplanes*4, layers[2], stride=2)
         #self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
         #self.avgpool = nn.AvgPool2d(10, stride=1)
         self.avgpool = nn.AdaptiveAvgPool2d(1)

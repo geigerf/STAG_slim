@@ -1,5 +1,4 @@
 ﻿import sys
-# sys.path.insert(0, '/home/msc20f10/Python_Code/pytorch_stag/STAG_slim')
 import numpy as np
 import os
 import time
@@ -7,6 +6,7 @@ import shutil
 import random
 import argparse
 
+# Add the parent directory to the path such that all modules can be found
 filePath = os.path.abspath(__file__)
 fileDir = os.path.dirname(filePath)
 parentDir = os.path.dirname(fileDir)
@@ -25,8 +25,8 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-parser = argparse.ArgumentParser(description='Touch-Classification.',
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser = argparse.ArgumentParser(description='Touch-Classification Slim12.',
+                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--dataset', default=('/scratch1/msc20f10/data/'
                                           + 'classification/metadata.mat'),
                     help="Path to metadata.mat file.")
@@ -41,13 +41,13 @@ parser.add_argument('--snapshotDir',
                     default='/scratch1/msc20f10/stag/training_checkpoints',
                     help="Where to store checkpoints during training.")
 parser.add_argument('--gpu', type=int, default=None,
-                    help=("ID number of the GPU to use [0--4]. "
+                    help=("ID number of the GPU to use [0--4].\n"
                           + "If left unspecified all visible CPUs."))
 parser.add_argument('--experiment', default=default_experiment,
                     help="Name of the current experiment.")
 parser.add_argument('--nfilters', type=int, default=16,
                     help="Number of filters for the first convolution.")
-parser.add_argument('--dropout', type=float, default=0,
+parser.add_argument('--dropout', type=float, default=0.4,
                     help="Dropout between the two ResNet blocks.")
 parser.add_argument('--dropoutFC', type=float, default=0,
                     help="Dropout before the fully connected layer.")
@@ -63,12 +63,16 @@ parser.add_argument('--dilation', type=int, default=1,
                     help="Dilation to use for the first convolution.")
 parser.add_argument('--kernel', type=int, default=3,
                     help="Kernel size to use for the first convolution.")
-parser.add_argument('--customData', type=str2bool, nargs='?', const=True,
-                    default=False, help="Use custom data loader.")
-parser.add_argument('--kfoldCV', type=str2bool, nargs='?', const=True,
+parser.add_argument('--customData', type=str, default=None,
+                    help=("Which split to use in the custom data loader.\n"
+                          + "If left to None the original data loader is used.\n" 
+                          + "Options: 'random', 'original', 'recording'"))
+parser.add_argument('--kfoldCV', type=int, default=None,
+                    help=("performs 6 fold cross validation.\n"
+                          + "Only has an effect with --customData 'random'"))
+parser.add_argument('--makeRepeatable', type=str2bool, nargs='?', const=True,
                     default=False,
-                    help=("performs 6 fold cross validation. "
-                          + "Can only be used together with custom data loading"))
+                    help="Makes experiments repeatable by using a constant seed.")
 args = parser.parse_args()
 
 # This line makes only the chosen GPU visible.
@@ -80,7 +84,8 @@ import torch
 import torch.backends.cudnn as cudnn
 
 from ObjectClusterDataset import ObjectClusterDataset
-from custom_dataloader import load_data, DataLoader
+from CustomDataLoader import CustomDataLoader
+from shared.dataset_tools import load_data
 
 
 nClasses = 27
@@ -92,12 +97,10 @@ experiment = 'nf' + str(nFrames) + '_' + args.experiment
 
 metaFile = args.dataset
 doFilter = True
-if not args.customData:
-    kFoldCV = False
+if args.customData is None:
+    kFoldCV = None
 else:
     kFoldCV = args.kfoldCV
-    
-customSplit = 'random'
  
 
 class Trainer(object):
@@ -108,7 +111,7 @@ class Trainer(object):
 
     def init(self, data_set):
         # Init model
-        if args.customData:
+        if args.customData is not None:
             self.data = {}
             # This data was loaded with the custom_dataloader
             self.data['train'] = data_set[0:2]
@@ -121,15 +124,15 @@ class Trainer(object):
 
     def loadDatasets(self, split='train', shuffle=True,
                      useClusterSampling=False):
-        if args.customData:
+        if args.customData is not None:
             # With custom data, the previously loaded data is used to
             # instantiate a dataloader
             set_size = len(self.data[split][1])
             return torch.utils.data.DataLoader(
-                DataLoader(self.data[split][0].reshape((set_size, 32, 32)),
-                           self.data[split][1], augment=(split == 'train'),
-                           nframes=nFrames, use_clusters=False,
-                           nclasses=nClasses),
+                CustomDataLoader(self.data[split][0].reshape((set_size, 32, 32)),
+                                 self.data[split][1], augment=(split=='train'),
+                                 nframes=nFrames, use_clusters=False,
+                                 nclasses=nClasses, oversample=(split=='train')),
                 batch_size=batch_size, shuffle=shuffle, num_workers=workers)
         else:
             return torch.utils.data.DataLoader(
@@ -242,7 +245,7 @@ class Trainer(object):
 
         # So far clustering is only used if the custom data loading is NOT used
         print('Running test with clustering...')
-        val_loader_cluster = self.loadDatasets('test', False, not args.customData)
+        val_loader_cluster = self.loadDatasets('test', False, args.customData is None)
         res['test_cluster-top1'], res['test_cluster-top3'],\
             _, conf_mat_cluster = self.step(val_loader_cluster,
                                             self.model.epoch,
@@ -320,13 +323,6 @@ class Trainer(object):
         top1 = AverageMeter()
         top3 = AverageMeter()
 
-        results = {
-            'batch': [],
-            'rec': [],
-            'frame': [],
-        }
-        catRes = lambda res,key: res[key].cpu().numpy() if not key in results else np.concatenate((results[key], res[key].cpu().numpy()), axis=0)
- 
         end = time.time()
         conf_matrix = torch.zeros(nClasses, nClasses).cpu()
         for i, (inputs) in enumerate(data_loader):
@@ -421,11 +417,16 @@ class AverageMeter(object):
 if __name__ == "__main__": 
     # Load the data either with the original train/test split if split='original'
     # or with a random stratified train/test split if split='random'
-    data_set = load_data(filename=metaFile, kfold=6, split=customSplit,
-                         seed=int(333 + time.time() + os.getpid()))
+    # or split into the recording sessions if split='recording'
+    if args.makeRepeatable:
+        seed = 333
+    else:
+        seed = int(333 + time.time() + os.getpid())
+    data_set = load_data(filename=metaFile, kfold=kFoldCV, split=args.customData,
+                         seed=seed)
     
     # k fold cross validation
-    if kFoldCV:
+    if kFoldCV and args.customData == 'random':
         train_data = data_set[0]
         train_labels = data_set[1]
         test_data = data_set[2]
@@ -441,8 +442,35 @@ if __name__ == "__main__":
             res_top1.append(res['test-top1'])
             res_top3.append(res['test-top3'])
         
-        print('-------------------------\nResults for 6 fold crossvalidation:')
-        print('\t{:s}: {:.3f} %'.format('Top1', np.mean(res_top1)))
-        print('\t{:s}: {:.3f} %\n'.format('Top3', np.mean(res_top3)))
+        print('\nResults for 6 fold cross validation:')
+        print('\tTop 1: mean {:.3f}% std. dev. {:.3f}%'
+              .format(np.mean(res_top1), np.std(res_top1)))
+        print('\tTop 3: mean {:.3f}% std. dev. {:.3f}%'
+              .format(np.mean(res_top3), np.std(res_top3)))
+    elif args.customData == 'recording':
+        x = np.array([data_set[0], data_set[2], data_set[4]])
+        y = np.array([data_set[1], data_set[3], data_set[5]])
+        
+        res_top1 = []
+        res_top3 = []
+        for i in range(3):
+            test_data = x[i]
+            test_labels = y[i]
+            # Remove ith element from array and concatenate the rest into one
+            train_data = np.delete(x, i)
+            train_data = np.concatenate((train_data[0], train_data[1]), axis=0)
+            train_labels = np.delete(y, i)
+            train_labels = np.concatenate((train_labels[0], train_labels[1]), axis=0)
+
+            dataset = [train_data, train_labels, test_data, test_labels]
+            res = Trainer.make(dataset)
+            res_top1.append(res['test-top1'])
+            res_top3.append(res['test-top3'])
+
+        print('\nResults for recording cross validation:')
+        print('\tTop 1: {:.3f}% + {:.3f}% + {:.3f}% = {:.3f}%'
+              .format(res_top1[0], res_top1[1], res_top1[2], np.mean(res_top1)))
+        print('\tTop 3: {:.3f}% + {:.3f}% + {:.3f}% = {:.3f}%\n'
+              .format(res_top3[0], res_top3[1], res_top3[2], np.mean(res_top3)))
     else:
         Trainer.make(data_set)

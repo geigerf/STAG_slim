@@ -47,7 +47,9 @@ class TouchNet(nn.Module):
         self.combination = nn.Conv2d(inplanes*2*nFrames, inplanes*2,
                                       kernel_size=1, padding=0)
         self.classifier = nn.Linear(inplanes*2, num_classes)
+        # Could be problematic for MX Cube AI
         self.avgpool = nn.AdaptiveAvgPool2d(1)
+        #self.avgpool = nn.AvgPool2d(kernel_size=8)
         #__Adaptations_______________________________________________________#
         self.dropout = nn.Dropout2d(p=dropoutFC, inplace=False)
         self.dropoutFC = dropoutFC
@@ -62,8 +64,9 @@ class TouchNet(nn.Module):
         for i in range(x.size(1)):
             xi = x[:,i:i+1,...]
             xi = self.net(xi)
-            xs += [xi]
+            xs += [xi]   
         x = torch.cat(xs, dim=1)
+        #x = self.net(x)
 
         # combine
         x = self.combination(x)
@@ -73,7 +76,13 @@ class TouchNet(nn.Module):
             x = self.conv(x)
 
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        # This line is problematic for MX Cube AI
+        # All it does is squeeze the last two dimensions from the tensor
+        #x = x.view(x.size(0), -1)
+        # Different ways to do the same thing
+        #x = torch.squeeze(x, dim=-1)
+        #x = torch.squeeze(x, dim=-1)
+        x = torch.nn.Flatten()(x)
 
         # Try if dropout before fully connected layer increases test accuracy
         if self.dropoutFC != 0:
@@ -94,7 +103,9 @@ class ClassificationModel(BaseModel):
 
     def initialize(self, numClasses, sequenceLength = 1, baseLr = 1e-3,
                    inplanes=64, dropout=0.2, dropoutFC=0, stride=1,
-                   dilation=1, kernel=3, addConv=False, dropoutMax=0):
+                   dilation=1, kernel=3, addConv=False, dropoutMax=0,
+                   cuda=True):
+        self.cuda = cuda
         BaseModel.initialize(self)
 
         print('Base LR = %e' % baseLr)
@@ -112,8 +123,9 @@ class ClassificationModel(BaseModel):
         self.nParams = sum(p.numel() for p in self.model.parameters())
 
         self.model = torch.nn.DataParallel(self.model)
-        self.model.cuda()
-        cudnn.benchmark = True
+        if self.cuda:
+            self.model.cuda()
+            cudnn.benchmark = True
 
         self.optimizer = torch.optim.Adam([
             {'params': self.model.module.parameters(),'lr_mult': 1.0},
@@ -121,7 +133,10 @@ class ClassificationModel(BaseModel):
 
         self.optimizers = [self.optimizer]
 
-        self.criterion = nn.CrossEntropyLoss().cuda()
+        if self.cuda:
+            self.criterion = nn.CrossEntropyLoss().cuda()
+        else:
+            self.criterion = nn.CrossEntropyLoss()
 
         self.epoch = 0
         self.error = 1e20 # last error
@@ -138,12 +153,20 @@ class ClassificationModel(BaseModel):
         else:
             self.model.eval()
 
-        image = torch.autograd.Variable(inputs['image'].cuda(),
-                                        requires_grad = isTrain)
-        pressure = torch.autograd.Variable(inputs['pressure'].cuda(),
-                                           requires_grad = isTrain)
-        objectId = torch.autograd.Variable(inputs['objectId'].cuda(),
-                                           requires_grad=False) if 'objectId' in inputs else None
+        if self.cuda:
+            image = torch.autograd.Variable(inputs['image'].cuda(),
+                                            requires_grad = isTrain)
+            pressure = torch.autograd.Variable(inputs['pressure'].cuda(),
+                                               requires_grad = isTrain)
+            objectId = torch.autograd.Variable(inputs['objectId'].cuda(),
+                                               requires_grad=False) if 'objectId' in inputs else None    
+        else:
+            image = torch.autograd.Variable(inputs['image'],
+                                            requires_grad = isTrain)
+            pressure = torch.autograd.Variable(inputs['pressure'],
+                                               requires_grad = isTrain)
+            objectId = torch.autograd.Variable(inputs['objectId'],
+                                               requires_grad=False) if 'objectId' in inputs else None
 
         if isTrain:
             output = self.model(pressure)

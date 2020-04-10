@@ -33,8 +33,9 @@ class ObjectClusterDataset(ObjectDataset):
         self.clusters = {}  
         self.clusterIds = np.zeros((self.pressure.shape[0],), int)
 
-        # Every recording
+        # Every recording (there are three per object id)
         for i,recordingId in enumerate(recordings):
+            # Find all samples belonging to the same recording
             rMask = recordingIds == recordingId
             rIndices = allIndices[rMask]
 
@@ -42,8 +43,11 @@ class ObjectClusterDataset(ObjectDataset):
             objects = np.unique(objectIds)
 
             # Every object (though there is always just one per recording)
+            # Each object has three unique recordings (corresponding to the
+            # three different experiment days)
             recClusters = {}
             for j,objectId in enumerate(objects):
+                # This clusters all valid samples from one recording
                 print('\tClustering %s / %s (#%d)...' % (self.meta['recordings'][recordingId], self.meta['objects'][objectId], objectId))
                 oMask = objectIds == objectId
                 oIndices = rIndices[oMask]
@@ -69,6 +73,9 @@ class ObjectClusterDataset(ObjectDataset):
                     recClusters[objectId] += [cIndices]
                     self.clusterIds[cIndices] = clusterId
 
+            # There is one 'recClusters' per recording, containing one index
+            # array for each cluster (depends on the number of frames used),
+            # that can be used to identify the samples belonging to that cluster
             self.clusters[recordingId] = recClusters
 
 
@@ -85,6 +92,9 @@ class ObjectClusterDataset(ObjectDataset):
         indices0 = np.argwhere(self.valid0).flatten()
         self.indices = np.zeros((len(indices0), self.sequenceLength), int)
         for i in range(len(indices0)):
+            # Each sample is complemented with nframes-1 other samples from the
+            # SAME recording but from DIFFERENT clusters. This is why the test
+            # set always has the same size, no matter how many input frames
             ind0 = indices0[i]
 
             recordingId = self.meta['recordingId'][ind0]

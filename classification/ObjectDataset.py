@@ -46,6 +46,8 @@ class ObjectDataset(TouchDataset):
         
         pressure = self.transformPressure(meta['pressure'])
 
+        # valid0 is a mask that yields only valid AND balanced samples
+        # validN is a mask that yields ALL valid samples (validN > valid0)
         return meta, valid0, validN, pressure
 
 
