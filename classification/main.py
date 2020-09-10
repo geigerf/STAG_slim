@@ -386,7 +386,6 @@ class Trainer(object):
 
     @staticmethod
     def make(data_set):
-     
         random.seed(454878 + time.time() + os.getpid())
         np.random.seed(int(12683 + time.time() + os.getpid()))
         torch.manual_seed(23142 + time.time() + os.getpid())
