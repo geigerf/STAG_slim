@@ -3,7 +3,7 @@
 ## Introduction
 This is an adaptation of the Pytorch based code for object classification and object estimation methods
 presented in the paper "Learning the signatures of the human grasp using a scalable tactile glove".
-It uses only the classification newtork, not the weight estimation network and the training/test loss
+It uses only the classification network, not the weight estimation network and the training/test loss
 evolution over number of epochs is saved.
 
 It relies on Pytorch 0.4.1 (or newer) and the dataset that can be downloaded separately from
@@ -12,14 +12,28 @@ It relies on Pytorch 0.4.1 (or newer) and the dataset that can be downloaded sep
 
 ## System requirements
 
-Requires CUDA and Python 3.6+ with following packages (exact version may not be necessary):
+This lists the installed python packages and versions.
+However, it is not absolutely necessary to install it with exactly the same versions.
+Consult this list if there are some broken dependencies in your environment.
 
-* numpy (1.15.4)
-* torch (0.4.1)
-* torchfile (0.1.0)
-* torchvision (0.2.1)
-* scipy (1.1.0)
-* scikit-learn (0.19.1)
+Required packages:
+- Python            3.8.1
+- numpy             1.18.1
+- pytorch           1.4.0 CUDA version
+- imbalanced-learn  0.6.2
+- scikit-learn      0.22.1
+- scipy             1.4.1
+
+Imported standard packages:
+- argparse
+- collections
+- datetime
+- os
+- random
+- re
+- shutil
+- sys
+- time
 
 ## Dataset preparation
 
