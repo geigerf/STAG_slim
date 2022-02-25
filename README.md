@@ -2,7 +2,7 @@
 
 ## Introduction
 This is an adaptation of the Pytorch based code for object classification and object estimation methods
-presented in the paper "Learning the signatures of the human grasp using a scalable tactile glove".
+presented in the paper _Subramanian Sundaram, Petr Kellnhofer, Yunzhu Li, Jun-Yan Zhu, Antonio Torralba and Wojciech Matusik. “Learning the signatures of the human grasp using a scalable tactile glove”. Nature, 2019_.
 It uses only the classification network, not the weight estimation network and the training/test loss
 evolution over number of epochs is saved.
 
